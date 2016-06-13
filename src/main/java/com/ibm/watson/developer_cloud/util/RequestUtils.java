@@ -13,10 +13,18 @@
  */
 package com.ibm.watson.developer_cloud.util;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.apache.commons.lang3.ArrayUtils;
 
@@ -29,7 +37,7 @@ import okhttp3.Request;
  * {@link com.ibm.watson.developer_cloud.http.RequestBuilder }
  * 
  */
-public class RequestUtils {
+public final class RequestUtils {
 
   /**
    * Default end point for relative request. It will be updated by {@link WatsonService} with the
@@ -37,10 +45,15 @@ public class RequestUtils {
    */
   public static final String DEFAULT_ENDPOINT = "http://do.not.use";
 
-  private static final String SDK_VERSION = "3.0.1";
+  private static final Logger LOG = Logger.getLogger(RequestUtils.class.getName());
+
   private static final String[] properties =
       new String[] {"java.vendor", "java.version", "os.arch", "os.name", "os.version"};
   private static String userAgent;
+
+  private RequestUtils() {
+    // This is a utility class - no instantiation allowed.
+  }
 
   /**
    * Encode a string into a valid URL string.
@@ -76,22 +89,20 @@ public class RequestUtils {
   public static Map<String, Object> omit(Map<String, Object> params, String... toOmit) {
     if (params == null)
       return null;
-    if (toOmit == null || toOmit.length == 0)
-      return params;
 
-    final Map<String, Object> ret = new HashMap<String, Object>();
+    final Map<String, Object> ret = new HashMap<String, Object>(params);
 
-    for (final String key : params.keySet()) {
-      if (!ArrayUtils.contains(toOmit, key))
-        ret.put(key, params.get(key));
-    }
+    if (toOmit != null)
+      ret.keySet().removeAll(Arrays.asList(toOmit));
+
     return ret;
   }
 
 
   /**
    * Return a copy of a {@link Map} with only the specified given key, or array of keys.
-   * 
+   * If {@code toPick} is empty all keys will remain in the Map.
+   *
    * @param params the parameters
    * @param toPick the keys to pick
    * @return the map with the picked key-value pars
@@ -100,15 +111,11 @@ public class RequestUtils {
   public static Map<String, Object> pick(Map<String, Object> params, String... toPick) {
     if (params == null)
       return null;
-    if (toPick == null || toPick.length == 0)
-      return params;
 
-    final Map<String, Object> ret = new HashMap<String, Object>();
+    final Map<String, Object> ret = new HashMap<String, Object>(params);
 
-    for (final String key : params.keySet()) {
-      if (ArrayUtils.contains(toPick, key))
-        ret.put(key, params.get(key));
-    }
+    if (toPick != null && toPick.length > 0)
+      ret.keySet().retainAll(Arrays.asList(toPick));
 
     return ret;
   }
@@ -152,11 +159,28 @@ public class RequestUtils {
    *
    * @return the user agent
    */
-  public static String getUserAgent() {
+  public static synchronized String getUserAgent() {
     if (userAgent == null) {
       userAgent = buildUserAgent();
     }
     return userAgent;
+  }
+
+  private static String loadSdkVersion() {
+    InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream("version.properties");
+    Properties properties = new Properties();
+
+    try {
+      properties.load(inputStream);
+    } catch (IOException e) {
+      LOG.log(Level.WARNING, "Could not load version.properties", e);
+    }
+
+    return properties.getProperty("version", "unknown-version");
+  }
+
+  public static void main(String[] args) {
+    System.out.println(getUserAgent());
   }
 
   /**
@@ -165,19 +189,12 @@ public class RequestUtils {
    * @return the string that represents the user agent
    */
   private static String buildUserAgent() {
-    StringBuilder stringBuilder = new StringBuilder();
-    stringBuilder.append("watson-apis-java-sdk/");
-    stringBuilder.append(SDK_VERSION);
-    stringBuilder.append(" (");
+    final List<String> details = new ArrayList<String>();
     for (String propertyName : properties) {
-      stringBuilder.append(propertyName);
-      stringBuilder.append("=");
-      stringBuilder.append(System.getProperty(propertyName));
-      stringBuilder.append("; ");
+      details.add(propertyName + "=" + System.getProperty(propertyName));
     }
-    stringBuilder.append(")");
 
-    return stringBuilder.toString();
+    return "watson-apis-java-sdk/" + loadSdkVersion() + " (" + RequestUtils.join(details, "; ") + ")";
   }
 
 }
